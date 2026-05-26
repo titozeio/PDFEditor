@@ -1,6 +1,9 @@
 import streamlit as st
 import tempfile
 import os
+import zipfile
+import io
+import time
 from compressor import compress_pdf, get_file_size_kb
 
 # Set page configuration
@@ -96,35 +99,46 @@ else:
         jpeg_quality, dpi_value, force_grayscale, page_scale = 85, 300, False, 1.0
 
 # Main Area
-uploaded_file = st.file_uploader("Choose a PDF file to compress", type=["pdf"])
+uploaded_files = st.file_uploader("Choose PDF files to compress", type=["pdf"], accept_multiple_files=True)
 
-if uploaded_file is not None:
-    # Display details of uploaded file
-    file_details = {
-        "Filename": uploaded_file.name,
-        "Original Size": f"{uploaded_file.size / (1024 * 1024):.2f} MB"
-    }
+if uploaded_files:
+    # Build list of file details
+    files_data = []
+    for f in uploaded_files:
+        files_data.append({
+            "File Name": f.name,
+            "Original Size": f"{f.size / (1024 * 1024):.2f} MB"
+        })
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**Filename:** `{file_details['Filename']}`")
-    with col2:
-        st.markdown(f"**Original Size:** `{file_details['Original Size']}`")
-        
+    st.write(f"📂 **Selected Files ({len(uploaded_files)}):**")
+    st.dataframe(files_data, use_container_width=True, hide_index=True)
+    
     st.markdown("---")
     
-    if st.button("🚀 Start Compression", use_container_width=True):
-        progress_text = "Optimizing and compressing PDF. Please wait..."
-        with st.status(progress_text) as status:
+    if st.button("🚀 Start Compression Job", use_container_width=True):
+        progress_bar = st.progress(0.0)
+        status_text = st.empty()
+        
+        compressed_results = []
+        total_original_kb = 0
+        total_compressed_kb = 0
+        overall_start_time = time.time()
+        
+        # Clear previous session state
+        if "job_results" in st.session_state:
+            del st.session_state["job_results"]
+        
+        for idx, uploaded_file in enumerate(uploaded_files):
+            status_text.markdown(f"**Processing {idx+1}/{len(uploaded_files)}:** `{uploaded_file.name}`...")
+            
+            # Create temporary files
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_in:
+                tmp_in.write(uploaded_file.getvalue())
+                tmp_in_path = tmp_in.name
+                
+            tmp_out_path = tmp_in_path.replace(".pdf", "_compressed.pdf")
+            
             try:
-                # Create temporary files for input and output
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_in:
-                    tmp_in.write(uploaded_file.getvalue())
-                    tmp_in_path = tmp_in.name
-                
-                tmp_out_path = tmp_in_path.replace(".pdf", "_compressed.pdf")
-                
-                # Perform the compression
                 stats = compress_pdf(
                     input_path=tmp_in_path,
                     output_path=tmp_out_path,
@@ -135,52 +149,120 @@ if uploaded_file is not None:
                     page_scale=page_scale
                 )
                 
-                # Read compressed PDF back
-                with open(tmp_out_path, "rb") as f:
-                    compressed_data = f.read()
+                with open(tmp_out_path, "rb") as f_out:
+                    comp_bytes = f_out.read()
+                    
+                compressed_results.append({
+                    "filename": uploaded_file.name,
+                    "bytes": comp_bytes,
+                    "original_size_kb": stats["original_size_kb"],
+                    "compressed_size_kb": stats["compressed_size_kb"],
+                    "savings_percent": stats["savings_percent"],
+                    "success": True
+                })
                 
-                # Cleanup temp files
-                os.remove(tmp_in_path)
-                os.remove(tmp_out_path)
-                
-                status.update(label="Compression Completed!", state="complete", expanded=False)
-                
-                # Store data in session state for down-stream actions (e.g. downloading)
-                st.session_state["compressed_data"] = compressed_data
-                st.session_state["stats"] = stats
-                st.session_state["compressed_filename"] = f"compressed_{uploaded_file.name}"
+                total_original_kb += stats["original_size_kb"]
+                total_compressed_kb += stats["compressed_size_kb"]
                 
             except Exception as e:
-                status.update(label=f"An error occurred during compression.", state="error")
-                st.error(f"Error details: {e}")
+                compressed_results.append({
+                    "filename": uploaded_file.name,
+                    "success": False,
+                    "error": str(e)
+                })
+            finally:
+                if os.path.exists(tmp_in_path):
+                    os.remove(tmp_in_path)
+                if os.path.exists(tmp_out_path):
+                    os.remove(tmp_out_path)
+                    
+            progress_bar.progress((idx + 1) / len(uploaded_files))
+            
+        overall_duration = time.time() - overall_start_time
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Filter successful ones
+        successful_results = [r for r in compressed_results if r["success"]]
+        
+        if successful_results:
+            # Store in session state
+            st.session_state["job_results"] = compressed_results
+            st.session_state["total_orig_kb"] = total_original_kb
+            st.session_state["total_comp_kb"] = total_compressed_kb
+            st.session_state["job_duration"] = overall_duration
+            
+            # Prepare download data
+            if len(successful_results) == 1:
+                # Single file
+                st.session_state["download_bytes"] = successful_results[0]["bytes"]
+                st.session_state["download_filename"] = f"compressed_{successful_results[0]['filename']}"
+                st.session_state["download_mime"] = "application/pdf"
+            else:
+                # Multiple files: Zip package
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for res in successful_results:
+                        zf.writestr(res["filename"], res["bytes"])
                 
-    # If compression has been executed and results are in session state, show download options
-    if "compressed_data" in st.session_state:
-        stats = st.session_state["stats"]
+                st.session_state["download_bytes"] = zip_buffer.getvalue()
+                st.session_state["download_filename"] = "compressed_pdfs_job.zip"
+                st.session_state["download_mime"] = "application/zip"
+        else:
+            st.error("❌ None of the files could be compressed.")
+            
+    # Display results if available in session state
+    if "job_results" in st.session_state:
+        st.success("🎉 Compression job completed successfully!")
         
-        st.success("🎉 PDF compressed successfully!")
+        results = st.session_state["job_results"]
+        total_orig = st.session_state["total_orig_kb"]
+        total_comp = st.session_state["total_comp_kb"]
+        duration = st.session_state["job_duration"]
         
-        # Display comparison metrics
+        # Overall delta
+        if total_orig > 0:
+            overall_savings = ((total_orig - total_comp) / total_orig) * 100.0
+        else:
+            overall_savings = 0.0
+            
         m1, m2, m3 = st.columns(3)
-        m1.metric("Original Size", f"{stats['original_size_kb']/1024:.2f} MB")
-        
-        # Determine color of delta: green is positive compression
+        m1.metric("Total Original Size", f"{total_orig / 1024:.2f} MB")
         m2.metric(
-            "Compressed Size", 
-            f"{stats['compressed_size_kb']/1024:.2f} MB", 
-            delta=f"-{stats['savings_percent']:.1f}%",
+            "Total Compressed Size", 
+            f"{total_comp / 1024:.2f} MB", 
+            delta=f"-{overall_savings:.1f}%",
             delta_color="normal"
         )
-        m3.metric("Processing Time", f"{stats['duration_seconds']:.2f}s")
+        m3.metric("Total Processing Time", f"{duration:.2f}s")
         
-        # Download button
+        # Details breakdown
+        st.markdown("### 📋 Compression Details")
+        details_table = []
+        for res in results:
+            if res["success"]:
+                details_table.append({
+                    "File Name": res["filename"],
+                    "Orig Size (MB)": f"{res['original_size_kb'] / 1024:.2f}",
+                    "Comp Size (MB)": f"{res['compressed_size_kb'] / 1024:.2f}",
+                    "Savings (%)": f"{res['savings_percent']:.1f}%",
+                    "Status": "✅ Success"
+                })
+            else:
+                details_table.append({
+                    "File Name": res["filename"],
+                    "Orig Size (MB)": "-",
+                    "Comp Size (MB)": "-",
+                    "Savings (%)": "-",
+                    "Status": f"❌ Error ({res['error']})"
+                })
+        st.dataframe(details_table, use_container_width=True, hide_index=True)
+        
+        # Download action
         st.download_button(
-            label="⬇️ Download Compressed PDF",
-            data=st.session_state["compressed_data"],
-            file_name=st.session_state["compressed_filename"],
-            mime="application/pdf",
+            label=f"⬇️ Download Compressed Work ({'ZIP Archive' if 'zip' in st.session_state['download_mime'] else 'PDF File'})",
+            data=st.session_state["download_bytes"],
+            file_name=st.session_state["download_filename"],
+            mime=st.session_state["download_mime"],
             use_container_width=True
         )
-        
-        # Extra details
-        st.info(f"The compressed file is **{stats['savings_percent']:.1f}%** smaller than the original.")
