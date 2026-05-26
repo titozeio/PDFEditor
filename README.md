@@ -1,4 +1,4 @@
-# PDFEditor
+# PDF Fasi
 
 <p align="left">
   <a href="https://www.python.org/" target="_blank"><img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white"/></a>
@@ -7,7 +7,7 @@
   <a href="https://python-pillow.org/" target="_blank"><img alt="Pillow" src="https://img.shields.io/badge/Pillow-9.0%2B-8B5CF6"/></a>
 </p>
 
-PDFEditor is a lightweight Streamlit app for compressing PDF files locally and quickly. The current goal is rapid prototyping: keep the workflow simple, reduce document size, and avoid sending files to external services.
+PDF Fasi is a lightweight Streamlit app for compressing PDF files locally and quickly. The current goal is rapid prototyping: keep the workflow simple, reduce document size, and avoid sending files to external services.
 
 ## What It Does
 

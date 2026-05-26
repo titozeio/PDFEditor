@@ -8,7 +8,7 @@ from compressor import compress_pdf, get_file_size_kb
 
 # Set page configuration
 st.set_page_config(
-    page_title="PDF Size Optimizer",
+    page_title="PDF Fasi",
     page_icon="📄",
     layout="centered",
     initial_sidebar_state="expanded"
@@ -17,7 +17,7 @@ st.set_page_config(
 # Custom header
 st.markdown("""
     <div style="text-align: center; margin-bottom: 30px;">
-        <h1 style="color: #4A607A; font-family: 'Outfit', sans-serif;">📄 PDF Size Optimizer</h1>
+        <h1 style="color: #4A607A; font-family: 'Outfit', sans-serif;">📄 PDF Fasi</h1>
         <p style="color: #7F8C8D; font-size: 1.1rem;">Compress your PDF documents locally, keeping your data secure.</p>
     </div>
 """, unsafe_allow_html=True)
