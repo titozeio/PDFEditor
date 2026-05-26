@@ -17,10 +17,11 @@ def compress_pdf(
     preset=None, 
     jpeg_quality=75, 
     max_dpi=150, 
-    force_grayscale=False
+    force_grayscale=False,
+    page_scale=1.0
 ):
     """
-    Compresses a PDF by optimizing images and performing structural cleanup.
+    Compresses a PDF by optimizing images, scaling pages, and performing structural cleanup.
     
     Parameters:
         input_path (str): Path to the input PDF file.
@@ -29,6 +30,7 @@ def compress_pdf(
         jpeg_quality (int): JPEG quality slider (10 to 100). Used if preset is None.
         max_dpi (int): Maximum image DPI (e.g., 72, 150, 300). Used if preset is None.
         force_grayscale (bool): If True, converts images to grayscale. Used if preset is None.
+        page_scale (float): Physical page dimensions scale factor (e.g., 0.5 to 1.5).
         
     Returns:
         dict: Compression statistics (original_size, compressed_size, ratio, duration).
@@ -97,8 +99,9 @@ def compress_pdf(
             need_resize = False
             new_size = (orig_width, orig_height)
             if max_dpi and current_dpi > max_dpi:
-                target_width = int(display_width_in * max_dpi)
-                target_height = int(display_height_in * max_dpi)
+                # Adjust visual dimensions based on the page scale factor
+                target_width = int(display_width_in * page_scale * max_dpi)
+                target_height = int(display_height_in * page_scale * max_dpi)
                 
                 # Only scale down, never scale up
                 if 0 < target_width < orig_width and 0 < target_height < orig_height:
@@ -140,6 +143,18 @@ def compress_pdf(
                 except Exception as e:
                     print(f"Error compressing/replacing image {xref}: {e}")
                     
+    # Apply physical page scaling if specified and different from 1.0
+    if page_scale != 1.0:
+        scaled_doc = fitz.open()
+        for page in doc:
+            rect = page.rect
+            new_w = rect.width * page_scale
+            new_h = rect.height * page_scale
+            new_page = scaled_doc.new_page(width=new_w, height=new_h)
+            new_page.show_pdf_page(new_page.rect, doc, page.number)
+        doc.close()
+        doc = scaled_doc
+
     # Save the final PDF with high level garbage collection and stream compression
     # garbage=4: eliminates unused, duplicate, and redundant objects
     # deflate=True: compresses file streams (text, vector graphics)

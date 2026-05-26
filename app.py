@@ -66,19 +66,34 @@ if preset == "custom":
         value=False,
         help="Check this if the PDF is black and white or color doesn't matter (reduces size further)."
     )
+    
+    page_scale_pct = st.sidebar.number_input(
+        "Page Scale Factor (%)",
+        min_value=10,
+        max_value=200,
+        value=100,
+        step=5,
+        help="Scales the physical dimensions of the pages. Min 10%, Max 200%."
+    )
+    
+    if page_scale_pct < 10 or page_scale_pct > 200:
+        st.sidebar.error("❌ Error: El factor de escala debe estar entre 10% y 200%.")
+        st.stop()
+        
+    page_scale = page_scale_pct / 100.0
 else:
     # Preset default display info
     st.sidebar.markdown("---")
     st.sidebar.subheader("Preset details:")
     if preset == "screen":
         st.sidebar.info("• **DPI Limit**: 72 (low res)\n• **JPEG Quality**: 40%\n• **Grayscale**: Yes\n• *Ideal for fast sharing / mobile.*")
-        jpeg_quality, dpi_value, force_grayscale = 40, 72, True
+        jpeg_quality, dpi_value, force_grayscale, page_scale = 40, 72, True, 1.0
     elif preset == "ebook":
         st.sidebar.info("• **DPI Limit**: 150 (medium res)\n• **JPEG Quality**: 65%\n• **Grayscale**: No\n• *Ideal for reading on screens.*")
-        jpeg_quality, dpi_value, force_grayscale = 65, 150, False
+        jpeg_quality, dpi_value, force_grayscale, page_scale = 65, 150, False, 1.0
     else:  # print
         st.sidebar.info("• **DPI Limit**: 300 (high res)\n• **JPEG Quality**: 85%\n• **Grayscale**: No\n• *Ideal for high-res printing.*")
-        jpeg_quality, dpi_value, force_grayscale = 85, 300, False
+        jpeg_quality, dpi_value, force_grayscale, page_scale = 85, 300, False, 1.0
 
 # Main Area
 uploaded_file = st.file_uploader("Choose a PDF file to compress", type=["pdf"])
@@ -116,7 +131,8 @@ if uploaded_file is not None:
                     preset=None if preset == "custom" else preset,
                     jpeg_quality=jpeg_quality,
                     max_dpi=dpi_value,
-                    force_grayscale=force_grayscale
+                    force_grayscale=force_grayscale,
+                    page_scale=page_scale
                 )
                 
                 # Read compressed PDF back
